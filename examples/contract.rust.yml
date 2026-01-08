@@ -1,0 +1,84 @@
+# Repo Contract - Rust Language Profile
+# Schema: https://pirakansa.github.io/Contract/schemas/v1.json
+#
+# This profile defines Rust-specific requirements.
+# It is automatically loaded when `profile: "rust"` is set in contract.yml.
+# Place this file at the repository root as `contract.rust.yml`.
+
+$schema: "https://pirakansa.github.io/Contract/schemas/v1.json"
+version: "1.0"
+language: "rust"
+
+# =============================================================================
+# Required Files (Rust-specific)
+# =============================================================================
+# These are merged with the core required_files (appended).
+
+required_files:
+  # Cargo Project Files
+  - path: "Cargo.toml"
+    description: "Rust project manifest"
+
+  - path: "Cargo.lock"
+    description: "Dependency lock file (required for binaries/applications)"
+    severity: "warning"
+
+  # Source Code Structure
+  - path: "src/main.rs"
+    description: "Binary entry point"
+    alternatives:
+      - "src/lib.rs"
+
+  # Toolchain Configuration
+  - path: "rust-toolchain.toml"
+    description: "Rust toolchain version specification"
+    severity: "warning"
+    alternatives:
+      - "rust-toolchain"
+
+  # Build System
+  - path: "Makefile"
+    description: "Build automation script"
+    severity: "info"
+    alternatives:
+      - "justfile"
+      - "Taskfile.yml"
+
+  # Code Quality Configuration
+  - path: ".cargo/config.toml"
+    description: "Cargo configuration"
+    severity: "info"
+    alternatives:
+      - ".cargo/config"
+
+  - path: "rustfmt.toml"
+    description: "Rust formatter configuration"
+    severity: "info"
+    alternatives:
+      - ".rustfmt.toml"
+
+  - path: "clippy.toml"
+    description: "Clippy linter configuration"
+    severity: "info"
+    alternatives:
+      - ".clippy.toml"
+
+# =============================================================================
+# Branch Protection (Rust-specific overrides)
+# =============================================================================
+# These settings override or extend the core branch_protection.
+# Object fields are overwritten; arrays are merged.
+
+branch_protection:
+  rules:
+    # Rust-specific CI checks
+    required_status_checks:
+      enabled: true
+      strict: true
+      checks:
+        - context: "build"
+        - context: "test"
+        - context: "lint"
+        - context: "clippy"
+        - context: "fmt-check"
+        - context: "audit"

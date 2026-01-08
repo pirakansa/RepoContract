@@ -1,0 +1,275 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pirakansa.github.io/Contract/schemas/v1.json",
+  "title": "Repo Contract Configuration",
+  "description": "Repository governance policy definition for Repo Contract v1.0",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema URI for validation and editor support"
+    },
+
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Contract specification version",
+      "examples": ["1.0"]
+    },
+
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Language profile to load (e.g., 'rust', 'typescript')",
+      "examples": ["rust", "typescript", "go", "python"]
+    },
+
+    "language": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Language identifier (used in profile files)",
+      "examples": ["rust", "typescript", "go", "python"]
+    },
+
+    "branch_protection": {
+      "$ref": "#/definitions/BranchProtection"
+    },
+
+    "required_files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RequiredFile"
+      },
+      "description": "List of files that must exist in the repository"
+    },
+
+    "metadata": {
+      "$ref": "#/definitions/Metadata"
+    }
+  },
+
+  "definitions": {
+    "BranchProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Branch protection configuration",
+      "properties": {
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["main"],
+          "description": "Branch patterns to protect (glob patterns supported)",
+          "examples": [["main"], ["main", "release/*"]]
+        },
+        "rules": {
+          "$ref": "#/definitions/BranchProtectionRules"
+        }
+      }
+    },
+
+    "BranchProtectionRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Branch protection rules",
+      "properties": {
+        "required_pull_request_reviews": {
+          "$ref": "#/definitions/RequiredPullRequestReviews"
+        },
+        "required_status_checks": {
+          "$ref": "#/definitions/RequiredStatusChecks"
+        },
+        "enforce_admins": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enforce restrictions for repository administrators"
+        },
+        "required_linear_history": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require linear commit history (no merge commits)"
+        },
+        "allow_force_pushes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow force pushes to protected branches"
+        },
+        "allow_deletions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow deletion of protected branches"
+        },
+        "required_conversation_resolution": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require all PR conversations to be resolved before merging"
+        },
+        "required_signatures": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require signed commits"
+        }
+      }
+    },
+
+    "RequiredPullRequestReviews": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pull request review requirements",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable pull request review requirements"
+        },
+        "required_approving_review_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "default": 1,
+          "description": "Number of required approving reviews (0-6)"
+        },
+        "dismiss_stale_reviews": {
+          "type": "boolean",
+          "default": true,
+          "description": "Dismiss stale reviews when new commits are pushed"
+        },
+        "require_code_owner_reviews": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require review from code owners"
+        },
+        "require_last_push_approval": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require approval from someone other than the last pusher"
+        }
+      }
+    },
+
+    "RequiredStatusChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Status check requirements before merging",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable status check requirements"
+        },
+        "strict": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require branch to be up to date before merging"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StatusCheck"
+          },
+          "default": [],
+          "description": "List of required status checks"
+        }
+      }
+    },
+
+    "StatusCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context"],
+      "description": "A required status check",
+      "properties": {
+        "context": {
+          "type": "string",
+          "description": "Name of the status check",
+          "examples": ["ci", "lint", "test"]
+        },
+        "app_id": {
+          "type": "integer",
+          "description": "GitHub App ID that provides this check (optional)"
+        }
+      }
+    },
+
+    "RequiredFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A file that must exist in the repository",
+      "oneOf": [
+        { "required": ["path"] },
+        { "required": ["pattern"] }
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "File path or glob pattern",
+          "examples": ["README.md", "src/**/*.rs", "LICENSE*"]
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regular expression pattern for matching files",
+          "examples": ["^README\\.(md|rst|txt)$"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the file's purpose"
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Alternative file paths (any one must exist)",
+          "examples": [["LICENSE", "LICENSE.md", "COPYING"]]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"],
+          "default": "error",
+          "description": "Severity level when file is missing"
+        },
+        "case_insensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Perform case-insensitive matching"
+        }
+      }
+    },
+
+    "Metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Repository metadata for documentation purposes",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Repository description"
+        },
+        "maintainers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^@"
+          },
+          "description": "List of maintainers (@username or @org/team)",
+          "examples": [["@pirakansa", "@platform-team"]]
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["critical", "standard", "experimental"],
+          "description": "Repository importance tier"
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date",
+          "description": "Last update date (YYYY-MM-DD)"
+        }
+      }
+    }
+  }
+}

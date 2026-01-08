@@ -1,0 +1,102 @@
+# Repo Contract - Core Configuration Example
+# Schema: https://pirakansa.github.io/Contract/schemas/v1.json
+#
+# This is the main contract file that defines repository governance rules.
+# Place this file at the repository root as `contract.yml`.
+
+$schema: "https://pirakansa.github.io/Contract/schemas/v1.json"
+version: "1.0"
+
+# Language profile to load (optional)
+# This will merge settings from `contract.rust.yml`
+profile: "rust"
+
+# =============================================================================
+# Branch Protection Rules
+# =============================================================================
+# Define protection rules for critical branches.
+# These rules are verified against GitHub's actual branch protection settings.
+
+branch_protection:
+  # Branches to protect (glob patterns supported)
+  branches:
+    - "main"
+    - "release/*"
+
+  rules:
+    # Pull Request Review Requirements
+    required_pull_request_reviews:
+      enabled: true
+      required_approving_review_count: 1
+      dismiss_stale_reviews: true
+      require_code_owner_reviews: false
+      require_last_push_approval: false
+
+    # Status Check Requirements
+    required_status_checks:
+      enabled: true
+      strict: true  # Require branch to be up to date
+      checks:
+        - context: "ci"
+        - context: "lint"
+        - context: "test"
+
+    # Additional Protection Settings
+    enforce_admins: false
+    required_linear_history: false
+    allow_force_pushes: false
+    allow_deletions: false
+    required_conversation_resolution: true
+    required_signatures: false
+
+# =============================================================================
+# Required Files
+# =============================================================================
+# Define files that must exist in the repository.
+# Severity levels: error (CI fails), warning (notification), info (log only)
+
+required_files:
+  # Essential Documentation
+  - path: "README.md"
+    description: "Project documentation and usage instructions"
+
+  - path: "LICENSE"
+    description: "Open source license file"
+    alternatives:
+      - "LICENSE.md"
+      - "LICENSE.txt"
+      - "COPYING"
+
+  - path: "CONTRIBUTING.md"
+    description: "Contribution guidelines"
+    severity: "warning"
+
+  - path: "CHANGELOG.md"
+    description: "Version history and release notes"
+    severity: "warning"
+
+  # Security
+  - path: "SECURITY.md"
+    description: "Security policy and vulnerability reporting"
+    severity: "warning"
+
+  # Git Configuration
+  - path: ".gitignore"
+    description: "Git ignore patterns"
+
+  # AI/Agent Configuration
+  - path: "AGENTS.md"
+    description: "AI agent development guidelines"
+    severity: "info"
+
+# =============================================================================
+# Metadata
+# =============================================================================
+# Repository information for documentation and governance tracking.
+
+metadata:
+  description: "Example project with Repo Contract governance"
+  maintainers:
+    - "@pirakansa"
+  tier: "standard"
+  last_updated: "2026-01-08"
