@@ -7,7 +7,18 @@ pub struct DiffEntry {
     pub path: String,
     #[serde(rename = "type")]
     pub diff_type: String,
-    pub severity: Severity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<Severity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -33,7 +44,12 @@ pub fn diff_required_files(checks: &[RequiredFileCheck]) -> DiffReport {
             rule: "required_files".to_string(),
             path: check.path.clone(),
             diff_type: "missing_file".to_string(),
-            severity: check.severity,
+            severity: Some(check.severity),
+            target: None,
+            expected: None,
+            actual: None,
+            missing: None,
+            extra: None,
         });
     }
 

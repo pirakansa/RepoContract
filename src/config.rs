@@ -35,6 +35,7 @@ pub struct CliConfig {
     pub format: Option<String>,
     pub strict: Option<bool>,
     pub check_rules: Option<Vec<String>>,
+    pub github_token: Option<String>,
 }
 
 pub fn load_config_file(path: &Path) -> ContractResult<Option<ConfigFile>> {
@@ -53,6 +54,7 @@ pub fn resolve_cli_config(config_file: Option<ConfigFile>) -> CliConfig {
         resolved.format = config_file.default.format;
         resolved.strict = config_file.default.strict;
         resolved.check_rules = config_file.check.rules;
+        resolved.github_token = config_file.github.token;
     }
     resolved
 }

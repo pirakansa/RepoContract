@@ -1,3 +1,4 @@
+mod branch_protection;
 mod config;
 mod contract;
 mod diff;
@@ -7,8 +8,15 @@ mod required_files;
 mod schema;
 mod validation;
 
+pub use crate::branch_protection::{
+    check_branch_protection, diff_branch_protection, summarize_branch_protection,
+    BranchProtectionCheck, BranchProtectionReport, GithubClient,
+};
 pub use crate::config::{load_config_file, resolve_cli_config, CliConfig, ConfigFile};
-pub use crate::contract::{Contract, RequiredFile, Severity};
+pub use crate::contract::{
+    BranchProtection, BranchProtectionRules, Contract, RequiredFile, RequiredPullRequestReviews,
+    RequiredStatusChecks, Severity, StatusCheck,
+};
 pub use crate::diff::{diff_required_files, DiffEntry, DiffReport};
 pub use crate::init::{init_contract_files, InitOptions, InitOutcome};
 pub use crate::loader::{load_contract, LoadOptions, LoadedContract};
@@ -40,4 +48,6 @@ pub enum ContractError {
     UnsupportedRule(String),
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+    #[error("GitHub API error: {0}")]
+    GitHubApi(String),
 }

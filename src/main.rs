@@ -1,11 +1,13 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use contract::{
-    check_required_files, diff_required_files, init_contract_files, load_config_file,
-    load_contract, resolve_cli_config, schema_json, validate_contract_file, CliConfig,
-    ContractError, LoadOptions, RequiredFilesReport, Summary,
+    check_branch_protection, check_required_files, diff_branch_protection, diff_required_files,
+    init_contract_files, load_config_file, load_contract, resolve_cli_config, schema_json,
+    summarize_branch_protection, validate_contract_file, BranchProtectionReport, CliConfig,
+    ContractError, GithubClient, LoadOptions, RequiredFilesReport, Summary,
 };
 
 #[derive(Parser)]
@@ -193,8 +195,9 @@ fn run_validate(args: ValidateArgs, cli_config: &CliConfig) -> anyhow::Result<i3
 }
 
 fn run_check(args: CheckArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
-    if args.remote.is_some() {
-        eprintln!("remote チェックは未対応です。");
+    let rules = parse_rules(args.rules, cli_config.check_rules.clone())?;
+    if args.remote.is_some() && rules.contains(&Rule::RequiredFiles) {
+        eprintln!("remote の required_files チェックは未対応です。");
         return Ok(2);
     }
     let config_path = resolve_config_path(None, args.config, cli_config);
@@ -205,7 +208,6 @@ fn run_check(args: CheckArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
         );
         return Ok(2);
     }
-    let rules = parse_rules(args.rules, cli_config.check_rules.clone())?;
     let strict = resolve_strict(args.strict, cli_config.strict);
     let format = args
         .format
@@ -216,16 +218,24 @@ fn run_check(args: CheckArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
         config_path: config_path.clone(),
         include_profile: true,
     })?;
-    if rules.contains(&Rule::BranchProtection) && loaded.contract.branch_protection.is_some() {
-        return Err(ContractError::UnsupportedRule(
-            "branch_protection".to_string(),
-        ))
-        .context("branch_protection は未実装です");
-    }
     let root = config_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
+
+    let branch_reports = if rules.contains(&Rule::BranchProtection) {
+        if let Some(branch_protection) = loaded.contract.branch_protection.as_ref() {
+            let repo = resolve_repository(args.remote.as_deref())
+                .context("GitHub リポジトリの解決に失敗しました")?;
+            let token = resolve_github_token(cli_config);
+            let client = GithubClient::new(token);
+            check_branch_protection(&client, &repo, branch_protection)?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
 
     let report = if rules.contains(&Rule::RequiredFiles) {
         Some(check_required_files(
@@ -236,23 +246,28 @@ fn run_check(args: CheckArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
         None
     };
 
-    let summary = summarize_required_files(&report);
+    let mut summary = summarize_required_files(&report);
+    let branch_summary = summarize_branch_protection(&branch_reports);
+    add_summary(&mut summary, &branch_summary);
     let has_error = summary.error > 0 || (strict && summary.warning > 0);
     if args.quiet && summary.error == 0 && summary.warning == 0 {
         return Ok(0);
     }
 
     match format {
-        CheckFormat::Human => print_check_human(report.as_ref(), &summary),
-        CheckFormat::Json => print_check_json(report.as_ref(), &summary, !has_error)?,
+        CheckFormat::Human => print_check_human(&branch_reports, report.as_ref(), &summary),
+        CheckFormat::Json => {
+            print_check_json(&branch_reports, report.as_ref(), &summary, !has_error)?
+        }
     }
 
     Ok(if has_error { 1 } else { 0 })
 }
 
 fn run_diff(args: DiffArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
-    if args.remote.is_some() {
-        eprintln!("remote diff は未対応です。");
+    let rules = parse_rules(args.rules, cli_config.check_rules.clone())?;
+    if args.remote.is_some() && rules.contains(&Rule::RequiredFiles) {
+        eprintln!("remote の required_files diff は未対応です。");
         return Ok(2);
     }
     let config_path = resolve_config_path(None, args.config, cli_config);
@@ -263,7 +278,6 @@ fn run_diff(args: DiffArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
         );
         return Ok(2);
     }
-    let rules = parse_rules(args.rules, cli_config.check_rules.clone())?;
     let format = args
         .format
         .or_else(|| cli_config.format.as_deref().and_then(parse_diff_format))
@@ -273,32 +287,38 @@ fn run_diff(args: DiffArgs, cli_config: &CliConfig) -> anyhow::Result<i32> {
         config_path: config_path.clone(),
         include_profile: true,
     })?;
-    if rules.contains(&Rule::BranchProtection) && loaded.contract.branch_protection.is_some() {
-        return Err(ContractError::UnsupportedRule(
-            "branch_protection".to_string(),
-        ))
-        .context("branch_protection は未実装です");
-    }
     let root = config_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
 
-    let report = if rules.contains(&Rule::RequiredFiles) {
+    let mut diffs = Vec::new();
+    let summary = if rules.contains(&Rule::RequiredFiles) {
         let required_report = check_required_files(&root, &loaded.contract.required_files)?;
-        Some(diff_required_files(&required_report.checks))
+        diffs.extend(diff_required_files(&required_report.checks).diffs);
+        Some(required_report.summary)
     } else {
         None
     };
 
-    let has_diff = report
-        .as_ref()
-        .map(|report| !report.diffs.is_empty())
-        .unwrap_or(false);
+    if rules.contains(&Rule::BranchProtection) {
+        if let Some(branch_protection) = loaded.contract.branch_protection.as_ref() {
+            let repo = resolve_repository(args.remote.as_deref())
+                .context("GitHub リポジトリの解決に失敗しました")?;
+            let token = resolve_github_token(cli_config);
+            let client = GithubClient::new(token);
+            let reports = check_branch_protection(&client, &repo, branch_protection)?;
+            diffs.extend(diff_branch_protection(&reports));
+        }
+    }
+
+    let report = contract::DiffReport { diffs, summary };
+
+    let has_diff = !report.diffs.is_empty();
     match format {
-        DiffFormat::Human => print_diff_human(report.as_ref()),
-        DiffFormat::Json => print_diff_json(report.as_ref())?,
-        DiffFormat::Yaml => print_diff_yaml(report.as_ref())?,
+        DiffFormat::Human => print_diff_human(Some(&report)),
+        DiffFormat::Json => print_diff_json(Some(&report))?,
+        DiffFormat::Yaml => print_diff_yaml(Some(&report))?,
     }
 
     Ok(if has_diff { 1 } else { 0 })
@@ -356,6 +376,59 @@ fn env_true(key: &str) -> bool {
         .ok()
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+fn resolve_github_token(cli_config: &CliConfig) -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| cli_config.github_token.clone())
+}
+
+fn resolve_repository(remote: Option<&str>) -> anyhow::Result<String> {
+    if let Some(remote) = remote {
+        return normalize_repository(remote)
+            .ok_or_else(|| anyhow!("invalid remote repository: {remote}"));
+    }
+    if let Ok(repo) = std::env::var("GITHUB_REPOSITORY") {
+        if !repo.trim().is_empty() {
+            return Ok(repo);
+        }
+    }
+    let output = Command::new("git")
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .context("git remote.origin.url の取得に失敗しました")?;
+    if !output.status.success() {
+        return Err(anyhow!("git remote.origin.url が見つかりません"));
+    }
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    normalize_repository(&url).ok_or_else(|| anyhow!("invalid remote repository: {url}"))
+}
+
+fn normalize_repository(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches(".git");
+    if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+        return take_owner_repo(rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("ssh://git@github.com/") {
+        return take_owner_repo(rest);
+    }
+    if let Some(index) = trimmed.find("github.com/") {
+        let rest = &trimmed[index + "github.com/".len()..];
+        return take_owner_repo(rest);
+    }
+    take_owner_repo(trimmed)
+}
+
+fn take_owner_repo(value: &str) -> Option<String> {
+    let mut parts = value.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some(format!("{owner}/{repo}"))
 }
 
 fn report_profile_name(config_path: &Path) -> anyhow::Result<Option<String>> {
@@ -461,7 +534,35 @@ fn print_validate_json(reports: &[contract::ValidationReport]) -> anyhow::Result
     Ok(())
 }
 
-fn print_check_human(report: Option<&RequiredFilesReport>, summary: &Summary) {
+fn print_check_human(
+    branch_reports: &[BranchProtectionReport],
+    report: Option<&RequiredFilesReport>,
+    summary: &Summary,
+) {
+    for report in branch_reports {
+        println!("Branch Protection [{}]", report.target);
+        if report.details.is_empty() {
+            println!("  ✓ No checks configured");
+            continue;
+        }
+        for detail in &report.details {
+            if detail.passed {
+                println!(
+                    "  ✓ {}: {}",
+                    detail.path,
+                    format_check_value(&detail.expected)
+                );
+            } else {
+                let icon = match detail.severity {
+                    contract::Severity::Error => "✗",
+                    contract::Severity::Warning => "⚠",
+                    contract::Severity::Info => "ℹ",
+                };
+                println!("  {icon} {}: {}", detail.path, detail.message);
+            }
+        }
+        println!();
+    }
     if let Some(report) = report {
         println!("Required Files");
         for check in &report.checks {
@@ -484,11 +585,19 @@ fn print_check_human(report: Option<&RequiredFilesReport>, summary: &Summary) {
 }
 
 fn print_check_json(
+    branch_reports: &[BranchProtectionReport],
     report: Option<&RequiredFilesReport>,
     summary: &Summary,
     valid: bool,
 ) -> anyhow::Result<()> {
     let mut results = Vec::new();
+    for report in branch_reports {
+        results.push(serde_json::json!({
+            "rule": "branch_protection",
+            "target": report.target,
+            "checks": report.checks,
+        }));
+    }
     if let Some(report) = report {
         results.push(serde_json::json!({
             "rule": "required_files",
@@ -510,13 +619,55 @@ fn print_diff_human(report: Option<&contract::DiffReport>) {
             println!("No differences found.");
             return;
         }
-        println!("Required Files:");
+        let mut branch_groups: Vec<(String, Vec<&contract::DiffEntry>)> = Vec::new();
+        let mut required_diffs = Vec::new();
         for diff in &report.diffs {
-            println!(
-                "  + {} (missing, severity: {})",
-                diff.path,
-                diff.severity.as_str()
-            );
+            if diff.rule == "branch_protection" {
+                let target = diff.target.clone().unwrap_or_else(|| "unknown".to_string());
+                if let Some((_, entries)) = branch_groups.iter_mut().find(|(key, _)| key == &target)
+                {
+                    entries.push(diff);
+                } else {
+                    branch_groups.push((target, vec![diff]));
+                }
+            } else if diff.rule == "required_files" {
+                required_diffs.push(diff);
+            }
+        }
+
+        for (target, diffs) in branch_groups {
+            println!("Branch Protection [{target}]");
+            for diff in diffs {
+                if diff.diff_type == "array_diff" {
+                    println!("  {}:", diff.path);
+                    if let Some(missing) = &diff.missing {
+                        for value in missing {
+                            println!("    + {value} (missing)");
+                        }
+                    }
+                    if let Some(extra) = &diff.extra {
+                        for value in extra {
+                            println!("    - {value} (extra)");
+                        }
+                    }
+                } else {
+                    println!(
+                        "  {}: expected {}, got {}",
+                        diff.path,
+                        format_diff_value(diff.expected.as_ref()),
+                        format_diff_value(diff.actual.as_ref())
+                    );
+                }
+            }
+            println!();
+        }
+
+        if !required_diffs.is_empty() {
+            println!("Required Files:");
+            for diff in required_diffs {
+                let severity = diff.severity.map(|value| value.as_str()).unwrap_or("error");
+                println!("  + {} (missing, severity: {severity})", diff.path);
+            }
         }
     } else {
         println!("No differences found.");
@@ -546,4 +697,23 @@ fn summarize_required_files(report: &Option<RequiredFilesReport>) -> Summary {
         .as_ref()
         .map(|report| report.summary.clone())
         .unwrap_or_default()
+}
+
+fn add_summary(summary: &mut Summary, other: &Summary) {
+    summary.error += other.error;
+    summary.warning += other.warning;
+    summary.info += other.info;
+}
+
+fn format_check_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        _ => value.to_string(),
+    }
+}
+
+fn format_diff_value(value: Option<&serde_json::Value>) -> String {
+    value
+        .map(format_check_value)
+        .unwrap_or_else(|| "-".to_string())
 }
