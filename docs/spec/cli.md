@@ -23,7 +23,7 @@
 
 ```bash
 # GitHub Releases からダウンロード
-curl -L https://github.com/pirakansa/Contract/releases/latest/download/contract-$(uname -s)-$(uname -m) -o contract
+curl -L https://github.com/pirakansa/RepoContract/releases/latest/download/contract-$(uname -s)-$(uname -m) -o contract
 chmod +x contract
 sudo mv contract /usr/local/bin/
 ```
@@ -434,7 +434,7 @@ jobs:
       
       - name: Install contract CLI
         run: |
-          curl -L https://github.com/pirakansa/Contract/releases/latest/download/contract-linux-amd64 -o contract
+          curl -L https://github.com/pirakansa/RepoContract/releases/latest/download/contract-linux-amd64 -o contract
           chmod +x contract
           sudo mv contract /usr/local/bin/
       
@@ -458,7 +458,7 @@ jobs:
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/pirakansa/Contract
+  - repo: https://github.com/pirakansa/RepoContract
     rev: v1.0.0
     hooks:
       - id: contract-validate
