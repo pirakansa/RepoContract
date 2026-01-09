@@ -21,7 +21,7 @@ Repo Contract は GitHub Actions と連携して、以下を実現します：
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  1. contract validate                                            │
+│  1. repo-contract validate                                       │
 │     - contract.yml の構文検証                                    │
 │     - Profile ファイルの構文検証                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -30,7 +30,7 @@ Repo Contract は GitHub Actions と連携して、以下を実現します：
               │ 失敗                          │ 成功
               ▼                               ▼
 ┌─────────────────────────┐   ┌─────────────────────────────────┐
-│  CI Failed              │   │  2. contract check               │
+│  CI Failed              │   │  2. repo-contract check          │
 │  - PR コメント投稿      │   │     - required_files 検証        │
 │  - ラベル付与           │   │     - branch_protection 検証     │
 │    contract:invalid     │   └─────────────────────────────────┘
